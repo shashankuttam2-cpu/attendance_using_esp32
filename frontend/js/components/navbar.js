@@ -15,6 +15,7 @@ export function renderNavbar(currentPath) {
 
     const navItems = [
         { path: '#dashboard', icon: 'fa-chart-line', label: 'Dashboard' },
+        { path: '#analytics', icon: 'fa-chart-pie', label: 'Defaulters & Analytics' },
         { path: '#timetable', icon: 'fa-clock', label: 'Timetable & Windows' },
         { path: '#students', icon: 'fa-users', label: 'Students List' },
         { path: '#attendance', icon: 'fa-calendar-check', label: 'Attendance Records' },

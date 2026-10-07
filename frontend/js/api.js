@@ -163,7 +163,23 @@ export const api = {
     }),
     deleteTeacher: (id) => fetchWithHandler(`/api/teachers/${id}`, {
         method: "DELETE"
-    })
+    }),
+
+    // Analytics & Defaulter Tracker
+    getDefaulters: (threshold = 75, branchCode = '', section = '', year = '', subject = '') => {
+        let query = [`threshold=${threshold}`];
+        if (branchCode) query.push(`branch_code=${encodeURIComponent(branchCode)}`);
+        if (section) query.push(`section=${encodeURIComponent(section)}`);
+        if (year) query.push(`year=${encodeURIComponent(year)}`);
+        if (subject) query.push(`subject=${encodeURIComponent(subject)}`);
+        return fetchWithHandler(`/api/analytics/defaulters?${query.join('&')}`);
+    },
+    sendDefaulterWarningEmail: (rollNos, customMessage = '') => fetchWithHandler("/api/analytics/send-warning-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roll_nos: rollNos, custom_message: customMessage })
+    }),
+    getAnalyticsCharts: () => fetchWithHandler("/api/analytics/summary-charts")
 };
 
 

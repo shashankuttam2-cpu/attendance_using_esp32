@@ -4,12 +4,14 @@ import studentsPage from './pages/students.js';
 import attendancePage from './pages/attendance.js';
 import classroomPage from './pages/classroom.js?v=1.2';
 import timetablePage from './pages/timetable.js';
+import analyticsPage from './pages/analytics.js';
 import { renderTeachersPage } from './pages/teachers.js';
 import { api } from './api.js';
 import { showToast } from './components/toast.js';
 
 const routes = {
     '#dashboard': dashboardPage,
+    '#analytics': analyticsPage,
     '#timetable': timetablePage,
     '#students': studentsPage,
     '#attendance': attendancePage,
