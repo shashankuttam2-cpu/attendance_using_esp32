@@ -179,7 +179,9 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roll_nos: rollNos, custom_message: customMessage })
     }),
-    getAnalyticsCharts: () => fetchWithHandler("/api/analytics/summary-charts")
+    getAnalyticsCharts: () => fetchWithHandler("/api/analytics/summary-charts"),
+    getSecurityAlerts: (limit = 50) => fetchWithHandler(`/api/analytics/security-alerts?limit=${limit}`)
 };
+
 
 

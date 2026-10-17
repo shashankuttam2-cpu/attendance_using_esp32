@@ -5,8 +5,8 @@ from datetime import date
 from utils import get_ist_now
 import json
 from database import get_db
-from config import BRANCH_METADATA, FACE_MATCH_TOLERANCE
-from utils import get_year_label
+from config import BRANCH_METADATA, FACE_MATCH_TOLERANCE, ENFORCE_BEACON_AUTH, COLLEGE_WIFI_SSID
+from utils import get_year_label, verify_beacon_token, log_security_event
 from schemas import AttendanceUpdate, AttendanceManualCreate, StudentProfileUpdate
 from services.face_engine import extract_face_encoding, match_encoding, compute_match_confidence, global_face_index
 from services.timetable_service import get_class_info_from_db, check_attendance_window
@@ -21,16 +21,48 @@ async def verify_attendance(
     background_tasks: BackgroundTasks,
     photo: UploadFile = File(..., description="Selfie photo for live verification"),
     roll_no: str | None = Form(None, description="Optional Roll Number for faster 1-to-1 matching"),
-    device_id: str | None = Form(None, description="Optional Device UUID for hardware binding verification")
+    device_id: str | None = Form(None, description="Optional Device UUID for hardware binding verification"),
+    beacon_token: str | None = Form(None, description="Cryptographic rolling token from classroom beacon"),
+    wifi_ssid: str | None = Form(None, description="Current connected Wi-Fi SSID from mobile client")
 ):
     """
     Verify a student's identity and mark attendance.
     If roll_no is provided, it performs a 1-to-1 verification against the registered encoding.
-    Enforces hardware device lock (Anti-Proxy) and strict time windows.
+    Enforces hardware device lock (Anti-Proxy), anti-rogue beacon verification, and strict time windows.
     """
-    # ── 1. Strict Time Window Check (Server Time) ──
-    now = get_ist_now()
     clean_roll = roll_no.strip().upper() if roll_no and roll_no.strip() else None
+    clean_dev = device_id.strip() if device_id and device_id.strip() else None
+
+    # ── 1. Anti-Rogue ESP32 & Beacon Authentication Check ──
+    if beacon_token and beacon_token.strip():
+        is_beacon_valid, beacon_reason = verify_beacon_token(beacon_token)
+        if not is_beacon_valid:
+            await log_security_event(
+                event_type="ROGUE_BEACON_DETECTED",
+                roll_no=clean_roll or "",
+                device_id=clean_dev or "",
+                details=f"Unauthorized ESP32 beacon signature! {beacon_reason}. Token: '{beacon_token}'",
+                severity="CRITICAL"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Classroom Beacon Security Alert: Unauthorized / Cloned ESP32 beacon detected ({beacon_reason}). Attendance must be marked using official classroom beacon."
+            )
+    elif ENFORCE_BEACON_AUTH:
+        await log_security_event(
+            event_type="BEACON_MISSING",
+            roll_no=clean_roll or "",
+            device_id=clean_dev or "",
+            details="Rejected: ENFORCE_BEACON_AUTH active but no beacon token received.",
+            severity="WARNING"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Classroom Beacon Required: Official classroom beacon was not detected. Please move closer to the classroom beacon."
+        )
+
+    # ── 2. Strict Time Window Check (Server Time) ──
+    now = get_ist_now()
     student_section = None
     student_branch = None
     student_year = None
@@ -116,6 +148,13 @@ async def verify_attendance(
                 )
                 dev_conflict = await dev_cur.fetchone()
                 if dev_conflict:
+                    await log_security_event(
+                        event_type="PROXY_DEVICE_MISMATCH",
+                        roll_no=clean_roll or "",
+                        device_id=incoming_dev,
+                        details=f"Proxy attempt! Phone is bound to {dev_conflict['name']} ({dev_conflict['roll_no']}) while attempting attendance for {student['name']}.",
+                        severity="HIGH"
+                    )
                     raise HTTPException(
                         status_code=403,
                         detail=f"Device Security Alert! This phone is bound to {dev_conflict['name']} ({dev_conflict['roll_no']}). Proxy attendance for {student['name']} is strictly blocked.",
@@ -141,6 +180,13 @@ async def verify_attendance(
                 match_distance = distance
                 match_confidence = confidence
             else:
+                await log_security_event(
+                    event_type="FACE_MISMATCH",
+                    roll_no=clean_roll or "",
+                    device_id=incoming_dev,
+                    details=f"Face mismatch! (Distance: {distance:.4f} > {FACE_MATCH_TOLERANCE}) for {student['name']}.",
+                    severity="HIGH"
+                )
                 raise HTTPException(
                     status_code=404,
                     detail=f"Face mismatch! (Distance: {distance:.4f} > {FACE_MATCH_TOLERANCE}). This does not appear to be {student['name']}. Proxy attendance blocked.",
@@ -186,11 +232,25 @@ async def verify_attendance(
                     )
                     dev_conflict = await dev_cur.fetchone()
                     if dev_conflict:
+                        await log_security_event(
+                            event_type="PROXY_DEVICE_MISMATCH",
+                            roll_no=matched_roll_no,
+                            device_id=incoming_dev,
+                            details=f"Proxy attempt! Phone bound to {dev_conflict['name']} ({dev_conflict['roll_no']}) while verifying {student['name']}.",
+                            severity="HIGH"
+                        )
                         raise HTTPException(
                             status_code=403,
                             detail=f"Device Security Alert! This phone is bound to {dev_conflict['name']} ({dev_conflict['roll_no']}). Proxy attendance for {student['name']} is strictly blocked.",
                         )
             else:
+                await log_security_event(
+                    event_type="FACE_NOT_RECOGNIZED",
+                    roll_no=clean_roll or "",
+                    device_id=incoming_dev,
+                    details="Face not recognized among registered college roster.",
+                    severity="WARNING"
+                )
                 raise HTTPException(
                     status_code=404,
                     detail="Face not recognized among registered students. Please ensure good lighting and look directly at the camera.",
@@ -202,6 +262,13 @@ async def verify_attendance(
                 matched_roll_no,
                 registered_dev,
                 incoming_dev,
+            )
+            await log_security_event(
+                event_type="BOUND_DEVICE_MISMATCH",
+                roll_no=matched_roll_no,
+                device_id=incoming_dev,
+                details=f"Student {student['name']} ({matched_roll_no}) registered device '{registered_dev}' != incoming device '{incoming_dev}'.",
+                severity="HIGH"
             )
             raise HTTPException(
                 status_code=403,

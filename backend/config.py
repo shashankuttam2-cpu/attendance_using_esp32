@@ -64,3 +64,9 @@ API_KEY = os.getenv("API_KEY", "default_secret_api_key_for_dev_only")
 
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
+
+# Cryptographic Anti-Rogue ESP32 & Beacon Authentication
+BEACON_SECRET_KEY = os.getenv("BEACON_SECRET_KEY", "iert_smart_classroom_beacon_secret_2026")
+ENFORCE_BEACON_AUTH = os.getenv("ENFORCE_BEACON_AUTH", "false").lower() == "true"
+COLLEGE_WIFI_SSID = os.getenv("COLLEGE_WIFI_SSID", "IERT_Campus_WiFi")
+

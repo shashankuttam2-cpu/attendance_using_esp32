@@ -156,7 +156,47 @@ export default {
                     </table>
                 </div>
             </div>
+
+            <!-- Security Audit & Anti-Rogue ESP32 Intrusion Alerts -->
+            <div class="bg-cardbg rounded-xl border border-gray-700/80 p-6 shadow-lg mt-6">
+                <div class="flex items-center justify-between mb-4 border-b border-gray-700/80 pb-3">
+                    <div>
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fas fa-shield-alt text-red-400"></i>
+                            Security & Anti-Rogue ESP32 Detection Log
+                        </h3>
+                        <p class="text-xs text-gray-400 mt-0.5">
+                            Automated tamper detection: Cryptographic beacon token verification, hardware device binding & liveness tracking.
+                        </p>
+                    </div>
+                    <button id="btn-refresh-security" class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 rounded border border-gray-600 flex items-center gap-1.5 transition-colors">
+                        <i class="fas fa-sync-alt"></i> Refresh Log
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-800/60 text-gray-400 text-[11px] uppercase tracking-wider border-b border-gray-700">
+                                <th class="py-2.5 px-3">Timestamp</th>
+                                <th class="py-2.5 px-3">Event Type</th>
+                                <th class="py-2.5 px-3">Severity</th>
+                                <th class="py-2.5 px-3">Target Roll No</th>
+                                <th class="py-2.5 px-3">Audit Details</th>
+                                <th class="py-2.5 px-3">IP Address</th>
+                            </tr>
+                        </thead>
+                        <tbody id="security-alerts-tbody" class="divide-y divide-gray-700/60 text-xs">
+                            <tr>
+                                <td colspan="6" class="py-6 text-center text-gray-500">
+                                    <i class="fas fa-spinner fa-spin mr-1"></i> Loading security audit logs...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         `;
+
 
         let defaultersData = null;
 
@@ -324,6 +364,64 @@ export default {
             showToast("Exported defaulter student list as CSV!", "success");
         });
 
+        const loadSecurityAlerts = async () => {
+            const tbody = document.getElementById('security-alerts-tbody');
+            if (!tbody) return;
+            try {
+                const res = await api.getSecurityAlerts(25);
+                const alerts = res.alerts || [];
+
+                if (alerts.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="py-6 text-center text-gray-500">
+                                <i class="fas fa-check-circle text-green-400 mr-1"></i> No security anomalies or rogue ESP32 beacon attempts detected. System secure!
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = alerts.map(a => {
+                    let sevClass = "bg-yellow-500/10 text-yellow-400 border-yellow-500/30";
+                    if (a.severity === 'CRITICAL') sevClass = "bg-red-500/20 text-red-400 border-red-500/50 font-bold";
+                    else if (a.severity === 'HIGH') sevClass = "bg-orange-500/20 text-orange-400 border-orange-500/40 font-semibold";
+                    
+                    let eventIcon = "fa-exclamation-circle";
+                    if (a.event_type.includes('BEACON')) eventIcon = "fa-broadcast-tower text-red-400";
+                    else if (a.event_type.includes('DEVICE')) eventIcon = "fa-mobile-alt text-amber-400";
+                    else if (a.event_type.includes('FACE')) eventIcon = "fa-user-slash text-purple-400";
+
+                    return `
+                        <tr class="hover:bg-darkbg/40 transition-colors">
+                            <td class="py-2.5 px-3 font-mono text-[11px] text-gray-400 whitespace-nowrap">${a.created_at || 'Just now'}</td>
+                            <td class="py-2.5 px-3">
+                                <span class="flex items-center gap-1.5 font-semibold text-gray-200">
+                                    <i class="fas ${eventIcon} text-xs"></i>
+                                    ${a.event_type}
+                                </span>
+                            </td>
+                            <td class="py-2.5 px-3">
+                                <span class="px-2 py-0.5 rounded text-[10px] border ${sevClass}">${a.severity}</span>
+                            </td>
+                            <td class="py-2.5 px-3 font-mono font-semibold text-white">${a.roll_no || '<span class="text-gray-500">N/A</span>'}</td>
+                            <td class="py-2.5 px-3 text-gray-300 text-[11px] max-w-xs truncate" title="${a.details || ''}">${a.details || '-'}</td>
+                            <td class="py-2.5 px-3 font-mono text-gray-400 text-[10px]">${a.ip_address || '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error("Failed to load security alerts:", err);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-4 text-center text-red-400 text-xs">
+                            Failed to load security audit log: ${err.message}
+                        </td>
+                    </tr>
+                `;
+            }
+        };
+
         // Event listeners for filters
         document.getElementById('filter-threshold').addEventListener('change', loadAnalyticsData);
         document.getElementById('filter-branch').addEventListener('change', loadAnalyticsData);
@@ -331,8 +429,9 @@ export default {
         document.getElementById('analytics-search').addEventListener('input', () => {
             if (defaultersData) renderDefaultersTable(defaultersData.defaulters);
         });
+        document.getElementById('btn-refresh-security')?.addEventListener('click', loadSecurityAlerts);
 
         // Initial Load
-        await loadAnalyticsData();
+        await Promise.all([loadAnalyticsData(), loadSecurityAlerts()]);
     }
 };

@@ -287,3 +287,42 @@ async def send_defaulter_warning_emails(payload: WarningEmailRequest):
         "message": f"Successfully sent attendance warning notices to {sent_count} student(s)!",
         "sent_count": sent_count
     }
+
+
+@router.get("/security-alerts")
+async def get_security_alerts(limit: int = 50):
+    """
+    Fetch recent security audit and anti-tamper events (rogue beacons, proxy attempts, face spoof).
+    """
+    db = await get_db()
+    try:
+        cur = await db.execute(
+            """
+            SELECT id, event_type, severity, roll_no, details, ip_address, created_at
+            FROM security_audit_logs
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        rows = await cur.fetchall()
+        alerts = [
+            {
+                "id": r["id"],
+                "event_type": r["event_type"],
+                "severity": r["severity"],
+                "roll_no": r["roll_no"],
+                "details": r["details"],
+                "ip_address": r["ip_address"],
+                "created_at": r["created_at"]
+            }
+            for r in rows
+        ]
+        return {
+            "status": "success",
+            "count": len(alerts),
+            "alerts": alerts
+        }
+    finally:
+        await db.close()
+

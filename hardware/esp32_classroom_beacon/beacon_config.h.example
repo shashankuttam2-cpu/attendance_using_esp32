@@ -2,10 +2,21 @@
 
 // ============================================================================
 // Classroom Beacon Configuration Template
-// Copy this file to "beacon_config.h" and set your classroom's private UUID.
+// Copy this file to "beacon_config.h" and configure for your classroom.
 // ============================================================================
 
 #define BEACON_UUID           "00000000-0000-0000-0000-000000000000"
 #define BEACON_UUID_REV       "00000000-0000-0000-0000-000000000000"
 #define BEACON_NAME           "SAS_Classroom_Beacon"
+#define CLASSROOM_ID          1
 #define LED_PIN               2
+
+// Anti-Rogue ESP32 Cryptographic Rolling Token Configuration
+// When enabled, the ESP32 synchronizes time via College Wi-Fi NTP and computes
+// an HMAC-SHA256 rolling Minor code every 60 seconds. Rogue ESP32s without
+// the institutional secret key will be rejected and logged as intruders.
+#define ENABLE_ROLLING_AUTH   false
+#define BEACON_SECRET_KEY     "iert_beacon_secret_salt_2026_xyz"
+#define WIFI_SSID             "IERT_CAMPUS_WIFI"
+#define WIFI_PASS             "campus_secure_pass"
+

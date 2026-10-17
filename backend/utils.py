@@ -91,3 +91,69 @@ def send_email_otp(recipient_email: str, otp_code: str, recipient_name: str = "F
     logger.info(f"============================================")
     print(f"\n🔑 [OTP LOG] Password Reset OTP for '{recipient_email}': {otp_code}\n")
     return False
+
+import hmac
+import hashlib
+import time
+from config import BEACON_SECRET_KEY, ENFORCE_BEACON_AUTH
+
+def compute_beacon_minor(classroom_id: int, secret_key: str, time_slot: int) -> int:
+    """Compute rolling 16-bit iBeacon Minor code using HMAC-SHA256."""
+    message = f"IERT_BEACON_{classroom_id}_{time_slot}".encode('utf-8')
+    h = hmac.new(secret_key.encode('utf-8'), message, hashlib.sha256).digest()
+    return (h[0] << 8) | h[1]
+
+def verify_beacon_token(token_str: str, classroom_id: int = 1, secret_key: str = None) -> tuple[bool, str]:
+    """
+    Verify if beacon_token from mobile app matches the official classroom beacon signature.
+    Token can be provided as 'major:minor' (e.g. '1:48291') or just 'minor' (e.g. '48291').
+    Validates against a 5-minute sliding window to comfortably tolerate clock drift.
+    """
+    if not token_str or not token_str.strip():
+        return False, "Beacon token missing"
+
+    key = secret_key or BEACON_SECRET_KEY
+    clean_token = token_str.strip()
+
+    try:
+        if ":" in clean_token:
+            parts = clean_token.split(":")
+            c_id = int(parts[0])
+            minor_val = int(parts[1])
+        else:
+            c_id = classroom_id
+            minor_val = int(clean_token)
+    except Exception:
+        return False, "Malformed beacon token format"
+
+    now_slot = int(time.time() // 60)
+    valid_slots = [now_slot, now_slot - 1, now_slot + 1, now_slot - 2, now_slot + 2]
+    expected_minors = [compute_beacon_minor(c_id, key, slot) for slot in valid_slots]
+
+    # Also accept static development minor 101 if dev mode is enabled
+    if minor_val in expected_minors or (not ENFORCE_BEACON_AUTH and minor_val == 101):
+        return True, "Valid official classroom beacon"
+
+    return False, f"Invalid Minor code '{minor_val}' for classroom '{c_id}'. Rogue beacon suspected."
+
+async def log_security_event(event_type: str, roll_no: str = "", device_id: str = "", details: str = "", severity: str = "WARNING"):
+    """Record anti-spoofing and rogue device security incidents in SQLite database."""
+    try:
+        from database import get_db
+        db = await get_db()
+        try:
+            now_iso = get_ist_now().isoformat()
+            await db.execute(
+                """
+                INSERT INTO security_audit_logs (timestamp, event_type, roll_no, device_id, details, severity)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (now_iso, event_type, roll_no or "", device_id or "", details or "", severity)
+            )
+            await db.commit()
+            logger.warning(f"[SECURITY ALERT] {event_type} | Roll: {roll_no} | Dev: {device_id} | Details: {details}")
+        finally:
+            await db.close()
+    except Exception as exc:
+        logger.error(f"Failed to record security audit log: {exc}")
+
